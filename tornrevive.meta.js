@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Torn Revive Radar
-// @version      0.1.0
+// @version      0.1.1
 // @description  Free reviver radar: watches your revive clients, factions and friends through the Torn API and alerts when one is in hospital, revivable by you, and worth the energy. Revive log for billing. Alerts only; every revive stays manual.
 // @author       Oxain
 // @match        https://www.torn.com/*

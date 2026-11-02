@@ -93,7 +93,8 @@ test('url handles paths with a query already', () => {
 
 test('the script never touches torn.com pages or automates input', () => {
 	const src = fs.readFileSync(path.join(__dirname, '..', 'tornrevive.user.js'), 'utf8');
-	assert.doesNotMatch(src, /\.click\(|dispatchEvent|\.submit\(|location\.(href|assign|replace)|window\.open|querySelector/);
+	assert.doesNotMatch(src, /\.click\(|dispatchEvent|\.submit\(|location\.(href|replace)|window\.open|querySelector/);
+	assert.equal((src.match(/location\.assign\(/g) || []).length, 1, 'only the notification click navigates, and only to the profile the user clicked for');
 	assert.doesNotMatch(src, /innerHTML/);
 	assert.deepEqual([...new Set(src.match(/@connect\s+\S+/g))], ['@connect      api.torn.com']);
 });

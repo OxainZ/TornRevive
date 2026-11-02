@@ -1,6 +1,6 @@
 // ==UserScript==
 // @name         Torn Revive Radar
-// @version      0.1.0
+// @version      0.1.1
 // @description  Free reviver radar: watches your revive clients, factions and friends through the Torn API and alerts when one is in hospital, revivable by you, and worth the energy. Revive log for billing. Alerts only; every revive stays manual.
 // @author       Oxain
 // @match        https://www.torn.com/*
@@ -21,7 +21,7 @@
 	/* ---------- pure core (exported for Node, no DOM) ---------- */
 
 	const Rev = {};
-	Rev.VERSION = '0.1.0';
+	Rev.VERSION = '0.1.1';
 	Rev.API = 'https://api.torn.com/v2';
 	Rev.COMMENT = 'TornRevive';
 	Rev.BUDGET_PER_MIN = 60;
@@ -256,6 +256,7 @@
 	const addBtn = el('button', { textContent: 'Add' });
 	const radarBtn = el('button', { textContent: 'Start radar' });
 	const soundIn = el('input', { type: 'checkbox', checked: load('sound', true) });
+	const volumeIn = el('input', { type: 'range', min: 0, max: 100, value: load('volume', 25), title: 'Alert volume' });
 	const skillIn = el('input', { type: 'number', min: 0, max: 100, step: 0.1, placeholder: 'auto from your history', value: load('skill', '') });
 	const statusEl = el('div', { id: 'tr-status' });
 	const listEl = el('div', {});
@@ -275,19 +276,35 @@
 			field('Torn API key', keyIn),
 			el('div', { className: 'tr-note', textContent: 'Limited access: it reads your own revive history for your skill, the 24 h revive count on each target and the billing log. Stored only in this browser\'s script storage and sent only to api.torn.com. Nothing is shared with anyone.' }),
 			field('My revive skill (override)', skillIn),
-			el('label', {}, soundIn, ' Sound on alerts')));
+			el('label', {}, soundIn, ' Sound on alerts'), field('Alert volume', volumeIn)));
 	const toggle = el('button', { id: 'tr-btn', textContent: 'Revive', onclick: () => { panel.hidden = !panel.hidden; } });
 	document.body.append(toggle, panel);
 	const say = (text) => { statusEl.textContent = text; };
 
 	function beep() {
 		if (!soundIn.checked) return;
-		try { const ctx = new AudioContext(); const o = ctx.createOscillator(); o.connect(ctx.destination); o.frequency.value = 660; o.start(); o.stop(ctx.currentTime + 0.25); } catch (e) { /* needs a click first */ }
+		const vol = Math.max(0, Math.min(1, (Number(volumeIn.value) || 0) / 100));
+		if (!vol) return;
+		try {
+			const ctx = new AudioContext();
+			const osc = ctx.createOscillator();
+			const gain = ctx.createGain();
+			gain.gain.setValueAtTime(0.15 * vol, ctx.currentTime);   // 0.15 is a soft ping; 1.0 was the raw oscillator at full blast
+			gain.gain.exponentialRampToValueAtTime(0.001, ctx.currentTime + 0.3);
+			osc.connect(gain);
+			gain.connect(ctx.destination);
+			osc.frequency.value = 660;
+			osc.start();
+			osc.stop(ctx.currentTime + 0.3);
+			osc.onended = () => ctx.close();
+		} catch (e) { /* the browser needs a click on the page before it allows sound */ }
 	}
-	function alertMe(title, text) {
+	function alertMe(title, text, url) {
 		beep();
-		if (typeof GM_notification === 'function') GM_notification({ title, text, timeout: 15000, onclick: () => window.focus() });
-		else if (typeof Notification !== 'undefined' && Notification.permission === 'granted') new Notification(title, { body: text });
+		// Clicking the popup is the user's click: it goes to the page they asked for. It never attacks or revives.
+		const go = () => { if (url) location.assign(url); else window.focus(); };
+		if (typeof GM_notification === 'function') GM_notification({ title, text, timeout: 15000, onclick: go });
+		else if (typeof Notification !== 'undefined' && Notification.permission === 'granted') { const n = new Notification(title, { body: text }); n.onclick = go; }
 		document.title = `(!) ${title}`;
 	}
 
@@ -402,7 +419,7 @@
 			}
 			const nowSec = Math.floor(Date.now() / 1000);
 			const rows = buildRows(nowSec);
-			for (const r of Rev.newlyGo(rows, prevGo)) alertMe(`Revive ${r.name}`, `${r.est}% chance · lvl ${r.level} · ${r.label}`);
+			for (const r of Rev.newlyGo(rows, prevGo)) alertMe(`Revive ${r.name}`, `${r.est}% chance · lvl ${r.level} · ${r.label} · click to open their profile`, Rev.profileUrl(r.id));
 			prevGo = new Set(rows.filter((r) => r.state === 'go').map((r) => r.key));
 			render(rows, nowSec);
 			renderBilling(nowSec);
@@ -426,6 +443,7 @@
 
 	radarBtn.addEventListener('click', () => { if (running) stop(); else start(); });
 	soundIn.addEventListener('change', () => save('sound', soundIn.checked));
+	volumeIn.addEventListener('change', () => { save('volume', Number(volumeIn.value)); beep(); });
 	keyIn.addEventListener('change', () => save('key', keyIn.value.trim()));
 	skillIn.addEventListener('change', () => save('skill', skillIn.value));
 	addBtn.addEventListener('click', () => {
